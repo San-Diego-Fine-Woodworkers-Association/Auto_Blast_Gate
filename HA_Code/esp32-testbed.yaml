@@ -1,0 +1,198 @@
+esphome:
+  name: esp32-testbed
+  on_boot:
+    priority: -100 # -100 is everything else is initalized already
+    then:
+      - stepper.set_acceleration:
+          id: stepper_motor
+          acceleration: inf
+      - stepper.set_deceleration:
+          id: stepper_motor
+          deceleration: inf
+      - stepper.report_position:
+          id: stepper_motor
+          position: 0
+      - script.execute: home_stepper
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+web_server:
+  port: 80
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "U56KcWSIZhE/FrQxfQoL1EWzqLiPLKM8LVYQOIPAAaM="
+
+ota:
+  password: "ba34895e25cd5fb8de5e7eda552bcf90"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Esp32-Testbed Fallback Hotspot"
+    password: "3RPEhHigvSxq"
+
+#globals maybe
+# Cover which has the state of gate
+# Stepper which controls the actual button
+# Binary_Sensor which has the limit switch
+# switch for red and blue LEDs
+# Can use the logger action to save data somehow hopefully 
+# Probably need script to be the entry point into everything
+
+# LEDs
+switch:
+  - platform: gpio
+    name: "ESP32 Testbed LED"
+    pin: 2
+  - platform: gpio
+    id: red_led
+    pin: 26
+    disabled_by_default: True
+  - platform: gpio
+    id: green_led
+    pin: 27
+    disabled_by_default: True
+
+# Current Sensor
+sensor:
+  - platform: adc
+    id: machine_current_sensor
+    pin: 36
+    raw: True
+    update_interval: 1s
+binary_sensor:
+  - platform: analog_threshold
+    name: "Machine Running"
+    id: machine_on
+    sensor_id: machine_current_sensor
+    threshold: 0.5
+    on_press:
+      then:
+        - cover.open: blast_gate
+    on_release:
+      then:
+        - cover.close: blast_gate
+  - platform: gpio
+    name: "Limit Switch"
+    id: limit_gate_closed
+    pin:
+      number: 13
+      inverted: true
+      mode:
+        input: True
+        pullup: True
+
+script:
+  - id: home_stepper
+    then:
+      - logger.log: "Homing Stepper Motor"
+      - stepper.set_speed:
+          id: stepper_motor
+          speed: 600 steps/s
+      - while:
+          condition:
+            binary_sensor.is_off: limit_gate_closed
+          then:
+            - stepper.set_target:
+                id: stepper_motor
+                target: -3000
+            - delay: 10ms
+            - logger.log: "Still executing"
+            - stepper.report_position:
+                id: stepper_motor
+                position: 0
+      - lambda: 'id(calibrated) = 1;'
+      - switch.turn_off: red_led
+      - switch.turn_on: green_led
+      - stepper.set_target:
+          id: stepper_motor
+          target: 0
+      - cover.template.publish:
+          id: blast_gate
+          state: CLOSED
+      - logger.log: "Homing of Stepper Finished"
+
+globals:
+  - id: calibrated
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: open_steps
+    type: int
+    initial_value: '2670'
+
+
+# Might want to just have a big lamda inside of cover that checks states and sets things in c++ code
+# id(stepper_motor).report_position(0);
+cover:
+  - platform: template
+    device_class: damper
+    name: "Blast Gate"
+    id: blast_gate
+    close_action:
+      - logger.log: "Closing Gate..."
+      - switch.turn_off: green_led
+      - switch.turn_on: red_led
+      - stepper.set_target:
+          id: stepper_motor
+          target: 0
+      - cover.template.publish:
+                id: blast_gate
+                current_operation: !lambda |-
+                    return COVER_OPERATION_CLOSING;
+      - delay: 4000 ms
+      - cover.template.publish:
+          id: blast_gate
+          current_operation: IDLE
+    open_action:
+      - logger.log: "Opening Gate..."
+      - switch.turn_off: red_led
+      - switch.turn_on: green_led
+      - stepper.set_target:
+          id: stepper_motor
+          target: !lambda "return id(open_steps);"
+      - cover.template.publish:
+                id: blast_gate
+                current_operation: !lambda |-
+                    return COVER_OPERATION_OPENING;
+      - delay: 4000 ms
+      - cover.template.publish:
+          id: blast_gate
+          current_operation: IDLE
+    assumed_state: true
+
+# Stepper Motor
+stepper:
+  - platform: a4988
+    id: stepper_motor
+    step_pin: 33
+    dir_pin:
+      number: 32
+      inverted: true
+    max_speed: 700 steps/s
+    sleep_pin: 14
+    acceleration: 3000
+    deceleration: 3000
+
+number:
+  - platform: template
+    name: Stepper Control
+    min_value: -3000
+    max_value: 3000
+    step: 1
+    set_action:
+      then:
+        - stepper.set_target:
+            id: stepper_motor
+            target: !lambda 'return x;'

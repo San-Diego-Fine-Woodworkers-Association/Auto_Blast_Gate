@@ -1,0 +1,196 @@
+esphome:
+  name: livingroom_shade
+  platform: ESP32
+  board: esp-wrover-kit
+  on_boot:
+    priority: -10
+    then:
+      - script.execute: homing2
+
+wifi:
+  ssid: !secret ssid
+  password: !secret wifi_pass
+  manual_ip:
+    static_ip: 192.168.1.65
+    gateway: 192.168.1.1
+    subnet: 255.255.255.0
+
+  ap:
+    ssid: "Livingroom Shade"
+    password: !secret wifi_pass
+
+captive_portal:
+
+web_server:
+  port: 80
+
+logger:
+
+ota:
+
+api:
+
+sun:
+  latitude: !secret lat
+  longitude: !secret long
+
+time:
+  - platform: sntp
+    timezone: !secret timezone
+    id: time1
+    on_time:
+       - seconds: 0
+         minutes: 0
+         hours: 10
+         days_of_week: MON,THU
+         then:
+           - script.execute: homing2
+
+sensor:
+  - platform: uptime
+    name: Nappali roló node uptime
+
+switch:
+  - platform: restart
+    name: "Nappali roló node újraindítás"
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO4
+      mode: INPUT_PULLUP
+      inverted: True
+    name: "Nappali sötétítő végállás - jobb"
+    id: endstop2
+
+script:
+  - id: homing2
+    then:
+      - logger.log: "Jobb roló pozícionálás"
+      - stepper.set_speed:
+          id: stepper2
+          speed:  100 steps/s
+      - while:
+          condition:
+            binary_sensor.is_off: endstop2
+          then:
+            - stepper.set_target:
+                id: stepper2
+                target: -100
+            - delay: 10ms
+            - stepper.report_position:
+                id: stepper2
+                position: 1
+      - lambda: 'id(calibrated2) = 1;'
+      - logger.log: "Jobb roló pozícionálva"
+
+globals:
+  - id: stepper2_steps
+    type: int
+    initial_value: '77000'
+  - id: calibrated2
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+cover:
+  - platform: template
+    name: "Nappali sötétitő - jobb"
+    id: nappali_rolo_jobb
+    open_action:
+      - stepper.set_speed:
+          id: stepper2
+          speed:  300 steps/s
+      - stepper.set_target:
+          id: stepper2
+          target: 0
+      - while:
+          condition:
+            lambda: |-
+              return id(nappali_rolo_jobb).position != 1;
+          then:
+            - cover.template.publish:
+                id: nappali_rolo_jobb
+                current_operation: !lambda |-
+                    return COVER_OPERATION_OPENING;
+                position: !lambda 'return 1 - (float(float(id(stepper2).current_position) / float(id(stepper2_steps))));'
+            - delay: 5000 ms
+      - cover.template.publish:
+          id: nappali_rolo_jobb
+          current_operation: IDLE
+          position: !lambda 'return 1;'
+    close_action:
+      - stepper.set_speed:
+          id: stepper2
+          speed:  600 steps/s
+      - stepper.set_target:
+          id: stepper2
+          target: !lambda "return id(stepper2_steps);"
+      - while:
+          condition:
+            lambda: |-
+              return id(nappali_rolo_jobb).position != 0;
+          then:
+            - cover.template.publish:
+                id: nappali_rolo_jobb
+                current_operation: !lambda |-
+                    return COVER_OPERATION_CLOSING;
+                position: !lambda 'return 1 - (float(float(id(stepper2).current_position) / float(id(stepper2_steps))));'
+            - delay: 5000 ms
+      - cover.template.publish:
+          id: nappali_rolo_jobb
+          current_operation: IDLE
+          position: !lambda 'return 0;'
+    stop_action:
+      - stepper.set_target:
+          id: stepper2
+          target: !lambda return id(stepper2).current_position;
+      - cover.template.publish:
+          id: nappali_rolo_jobb
+          current_operation: IDLE
+          position: !lambda 'return 1 - (float(float(id(stepper2).current_position) / float(id(stepper2_steps))));'
+    position_action:
+      - stepper.set_speed:
+          id: stepper2
+          speed: !lambda |-
+             if(pos > id(nappali_rolo_jobb).position){
+                    return 300;
+                  } else {
+                    return 600;
+                  }
+      - stepper.set_target:
+          id: stepper2
+          target: !lambda return (id(stepper2_steps) - (int(id(stepper2_steps)*pos)));
+      - while:
+          condition:
+            lambda: |-
+              return id(nappali_rolo_jobb).position != pos;
+          then:
+            - cover.template.publish:
+                id: nappali_rolo_jobb
+                current_operation: !lambda |-
+                  if(pos < id(nappali_rolo_jobb).position){
+                    return COVER_OPERATION_OPENING;
+                  } else {
+                    return COVER_OPERATION_CLOSING;
+                  }
+                position: !lambda 'return 1 - (float(float(id(stepper2).current_position) / float(id(stepper2_steps))));'
+            - delay: 5000 ms
+      - cover.template.publish:
+          id: nappali_rolo_jobb
+          current_operation: IDLE
+          position: !lambda 'return 1 - (float(float(id(stepper2).current_position) / float(id(stepper2_steps))));'
+    has_position: true
+    optimistic: false
+    assumed_state: true
+
+stepper:
+  - platform: a4988
+    id: stepper2
+    step_pin: GPIO23
+    dir_pin: GPIO22
+    sleep_pin: GPIO21
+    max_speed: 600 steps/s
+    acceleration: 300
+    deceleration: 200
+
