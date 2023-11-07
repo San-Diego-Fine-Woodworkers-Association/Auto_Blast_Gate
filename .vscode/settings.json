@@ -1,0 +1,12 @@
+{
+    "vsmqtt.brokerProfiles": [
+        {
+            "name": "HA",
+            "host": "192.168.86.100",
+            "port": 1883,
+            "clientId": "vsmqtt_client_9998",
+            "username": "skiley",
+            "password":"test"
+        }
+    ]
+}

@@ -55,16 +55,16 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 //      Pin Assignements
 
 #define ANALOG_PIN_IN             A0
-const int limitSwitchPin  =       19;
+const int limitSwitchPin  =       13;
 const int reedRelayPin =          23;
 const int greenLEDpin =           25;
 const int redLEDpin =             26;
 const int gateOn =                16;    // Controls H-Bridge
 const int gateOff =               4;     // Controls H-Bridge
 int linkPin =                     13;    // use pin 33 for ver 1-3   Use pin 13 for v4 plus
-int stepPin =                     16;    // 16 for combo boards   04 for earlier versions
-int dirPin =                      04;    // 04 for combo boards   02 for earlier versions
-int enablePin  =                  17;    // 17 for combo boards  16 for early versions
+int stepPin =                     33;    // 16 for combo boards   04 for earlier versions
+int dirPin =                      32;    // 04 for combo boards   02 for earlier versions
+int enablePin  =                  25;    // 17 for combo boards  16 for early versions
 const int speedPin =              18;   //  MS2 sets enables quarter stepping
 
 //     Working Variables
